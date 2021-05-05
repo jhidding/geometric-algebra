@@ -4,15 +4,56 @@
         (algebra commutative)
         (algebra geometric)
         (utility cut)
-        (utility pmatch))
+        (utility algorithms)
+        (utility pmatch)
+        (algebra syntactic)
+        (algebra internal syntactic)
+        (only (chezscheme) pretty-print))
 
-(define-syntax :m:
-  (syntax-rules ()
-    ((_ a b ...) (monomial (expression (quote a)) (list (quote b) ...)))))
+(define (to-multivector a)
+  (if (blade? a)
+    (let* ((offsets '#(0 1 4 7))
+           (sizes   '#(1 3 3 1))
+           (grade   (multivector-grade a))
+           (result  (make-vector 8 0)))
+      (do ((i 0 (+ i 1)))
+          ((= i (vector-ref sizes grade)) (make-multivector result))
+        (vector-set! result (+ i (vector-ref offsets grade))
+                     (vector-ref (multivector-data a) i))))
+    a))
 
-(let ((a (polynomial
-           (:m: a-x e1) (:m: a-y e2) (:m: a-z e3)))
-      (b (polynomial
-           (:m: b-x e1) (:m: b-y e2) (:m: b-z e3))))
-  (println "{} . {} = {}" (repr a) (repr b) (repr (dot-product a b))))
-       
+(define (multivector-project grade a)
+  (let* ((offsets '#(0 1 4 7))
+         (sizes   '#(1 3 3 1))
+         (result  (make-vector (vector-ref sizes grade) 0)))
+    (do ((i 0 (+ i 1)))
+        ((= i (vector-ref sizes grade)) (make-multivector grade result))
+      (vector-set! result i
+                   (vector-ref (multivector-data a)
+                               (+ i (vector-ref offsets grade)))))))
+
+(define (add a b)
+  (cond
+    ((and (blade? a) (blade? b) (= (blade-grade a) (blade-grade b)))
+     (make-multivector
+       (blade-grade a)
+       (vector-map + (multivector-data a) (multivector-data b))))
+    (else
+     (add (to-multivector a) (to-multivector b)))))
+
+(define mul
+  (make-mul 3 *))
+
+(define (scalar s)
+  (make-multivector 0 (vector s)))
+
+(define (:- x y z)
+  (make-multivector 1 (vector x y z)))
+
+(define (:> x y z)
+  (make-multivector 2 (vector x y z)))
+
+(define I (make-multivector 3 '#(1)))
+
+(pretty-print (mul (:- 1 2 3) (:- 4 5 6)))
+

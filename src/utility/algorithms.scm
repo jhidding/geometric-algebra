@@ -1,8 +1,9 @@
 (library (utility algorithms)
   (export append-reverse append-map string-join unfold range iterate-n find-index
-          split-at group-by combinations)
+          split-at group-by combinations unique cartesian-product)
   (import (rnrs (6))
-          (utility receive))
+          (utility receive)
+          (utility cut))
 
   (define (append-reverse rev-head tail)
     (if (null? rev-head)
@@ -19,12 +20,12 @@
       x
       (iterate-n f (f x) (- n 1))))
 
-  (define (range n)
-    (let loop ((n n)
-               (result '()))
-      (if (zero? n)
-          result
-          (loop (- n 1) (cons (- n 1) result)))))
+  (define range
+    (case-lambda
+      ((n)   (range 0 n))
+      ((a b) (do ((i a (+ i 1))
+                  (r '() (cons i r)))
+                 ((>= i b) (reverse r))))))
 
   (define (find-index elem lst)
     (let loop ((lst lst)
@@ -90,4 +91,21 @@
               (map (lambda (y) (cons (car lst) y))
                    (combinations (- m 1) (cdr lst)))
               (combinations m (cdr lst))))))
+
+  (define (unique equiv? lst)
+    (if (null? lst)
+      '()
+      (let loop ((lst (cdr lst))
+                 (res (cons (car lst) '())))
+        (cond
+          ((null? lst)                  (reverse res))
+          ((equiv? (car lst) (car res)) (loop (cdr lst) res))
+          (else                         (loop (cdr lst) (cons (car lst) res)))))))
+
+  (define (cartesian-product f first . rest)
+    (let* ((curry1 (lambda (f) (lambda (a) (lambda args (apply f a args)))))
+           (ap     (lambda (f a)
+                     (append-map (lambda (f*) (map (curry1 f*) a)) f))))
+      (map (lambda (f) (f))
+           (fold-left ap (map (curry1 f) first) rest))))
 )

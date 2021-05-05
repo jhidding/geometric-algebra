@@ -1,9 +1,11 @@
 (library (algebra geometric)
          (export monomial? monomial coefficient basis
                  basis-wedge basis-wedge-1 collect-terms
-                 polynomial? polynomial
+                 polynomial? polynomial project grade
                  dot-product wedge-product
-                 vector-sizes)
+                 g-info? make-g-info g-info-sizes g-info-offsets g-info-dim
+                 g-info-basis blade-basis full-basis
+                 vector-sizes symbolic-vector)
 
          (import (rnrs (6))
                  (format format)
@@ -38,6 +40,8 @@
         (values (if (odd? (length rev-head)) -1 1)
                 (append-reverse rev-head (cdr tail))))))
 
+  #| Compute the product of two basis vectors
+   |#
   (define (basis-wedge a b)
     (let loop ((a (reverse a))
                (b b)
@@ -46,6 +50,14 @@
         ((null? a) (values sign b))
         (else      (receive (sign* b*) (basis-wedge-1 (car a) b)
                      (loop (cdr a) b* (* sign sign*)))))))
+
+  (define (dual-basis I a)
+    (receive (sign w) (basis-wedge I a)
+      (if (= sign -1)
+        (if (< (length w) 2)
+          (error 'dual-basis "The dual of the given basis vector is negative.")
+          (cons* (cadr w) (car w) (cddr w)))
+        w)))
 
   #| Generate a function that computes the product between two monomials.
    |#
@@ -67,6 +79,8 @@
   (define-predicate monomial?)
   (define-operation (basis self))
   (define-operation (coefficient self))
+  (define-operation (grade self))
+  (define-operation (project self v))
 
   (define (monomial c e)
     (object
@@ -90,7 +104,11 @@
                             (monomial (negate (:* c (coefficient other))) w)
                             (monomial (:* c (coefficient other)) w))))
       ((:-: self other) (:+ self (negate other)))
-      ((negate self) (monomial (negate c) e))))
+      ((negate self) (monomial (negate c) e))
+      ((grade self) (length e))
+      ((project self v) (if (basis-equiv e v)
+                          (if (permutation-even? e v) c (negate c))
+                          (like c 0)))))
 
   (define (coerce-monomial a m)
     (let ((b (basis m))
@@ -110,13 +128,21 @@
                        ((null? a) (error 'polynomial "can't create polynomial from null"))
                        (else      (polynomial (like (car a) n)))))
       ((:one? self) (and (= 1 (length a)) (:one? (car a))))
-      ((:zero? self) (all? :zero? a))
+      ((:zero? self) (for-all :zero? a))
       ((:+: self other) (apply polynomial (collect-terms (append a (unbox other)))))
       ((:-: self other) (:+ self (negate other)))
       ((:*: self other) (apply polynomial (collect-terms
                           (append-map (lambda (a-i)
                             (map (cut :* a-i <>) (unbox other))) a))))
-      ((negate self) (apply polynomial (map negate a)))))
+      ((negate self) (apply polynomial (map negate a)))
+      ((grade self)  (let ((gs (unique = (list-sort < (map grade a)))))
+                       (cond
+                         ((null? gs)       0)
+                         ((null? (cdr gs)) (car gs))
+                         (else             'multi))))
+      ((project self v) (if (null? a)
+                          0
+                          (apply :+ (map (cut project <> v) a))))))
 
   (define (coerce-polynomial as p)
     (let ((get-basis (lambda (m)
@@ -135,9 +161,9 @@
     (:* (like a 1/2) (:- (:* a b) (:* b a))))
 
   (define (symbolic-basis dim)
-    (do ((i 1   (+ i 1))
-         (r '() (cons (string->symbol (format "e{}" i)) r)))
-        ((= i dim) (reverse r))))
+    (map (lambda (i)
+           (string->symbol (format "e{}" i)))
+         (range 1 (+ dim 1))))
 
   (define (vector-sizes dim)
     (if (zero? dim)
@@ -168,7 +194,36 @@
                  (list->vector offsets)
                  (symbolic-basis dim)))))))
 
-  #|(define (symbolic-vector dim grade sym)
-    (let ((basis (combinations grade (symbolic-basis dim))) |#
+  (define (symbolic-blade g grade sym)
+    (let* ((basis  (blade-basis g grade))
+           (o      (vector-ref (g-info-offsets g) grade))
+           (n      (vector-ref (g-info-sizes g) grade))
+           (vars   (map (lambda (i)
+                          (expression
+                            (string->symbol (format "{}{}" sym i))))
+                        (range o (+ o n)))))
+      (apply polynomial (map monomial vars basis))))
+
+  (define (blade-basis g grade)
+    (let ((dim (g-info-dim g)))
+      (if (> grade (/ dim 2))
+        (map (cut dual-basis (g-info-basis g) <>)
+             (combinations (- dim grade) (g-info-basis g)))
+          (combinations grade (g-info-basis g)))))
+
+  (define (full-basis g)
+    (append-map (lambda (k)
+                  (blade-basis g k))
+                (range 0 (+ 1 (g-info-dim g)))))
+
+  (define (symbolic-vector g grade sym)
+    (if (eq? grade 'multi)
+      (let ((vars (map (lambda (i)
+                         (expression
+                           (string->symbol (format "{}{}" sym i))))
+                       (range 0 (expt 2 (g-info-dim g)))))
+            (basis (full-basis g)))
+        (apply polynomial (map monomial vars basis)))
+      (symbolic-blade g grade sym)))
 )
 

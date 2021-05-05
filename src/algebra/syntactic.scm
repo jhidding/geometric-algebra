@@ -1,0 +1,21 @@
+(library (algebra syntactic)
+         (export make-mul multivector? make-multivector multivector-grade multivector-data)
+         (import (rnrs (6))
+                 (algebra rings)
+                 (algebra geometric)
+                 (algebra internal syntactic)
+                 (only (chezscheme) trace-define-syntax))
+  
+  (trace-define-syntax make-mul
+    (lambda (x)
+      (syntax-case x ()
+        ((_ <dim> <op>)
+         (let* ((dim  (syntax->datum #'<dim>))
+                (op   (syntax->datum #'<op>))
+                (expr (case op
+                        ((*)     (gen-mul :* dim))
+                        ((dot)   (gen-mul dot-product dim))
+                        ((wedge) (gen-mul wedge-product dim)))))
+           (with-syntax ((<expr> (datum->syntax #'<op> expr)))
+             #'<expr>))))))
+)
